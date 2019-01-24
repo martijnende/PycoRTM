@@ -379,8 +379,8 @@ class FD_solver(animator, IO, rk45_solver):
 
             if self.i % self.N_print == 0:
                 print(
-                    "t = %.1f kyr \t dt = %.2e yr \t T = %.1f K \t v = %.3e m/s" %
-                    (1e-3 * t / self.t_yr, dt / self.t_yr, np.mean(T),
+                    "t = %.1f kyr \t dt = %.2e yr \t Tmax = %.1f K \t vmax = %.3e m/s" %
+                    (1e-3 * t / self.t_yr, dt / self.t_yr, T.max(),
                      np.max(np.sqrt(u_r ** 2 + u_theta ** 2)))
                 )
             if self.i % self.N_IO == 0:
@@ -408,13 +408,6 @@ class FD_solver(animator, IO, rk45_solver):
         u_r = kernels["psi"]["grad_theta"].dot(psi)
         u_theta = -kernels["psi"]["grad_r"].dot(psi)
         u_mag = np.sqrt(u_r**2 + u_theta**2)
-
-        # i_max = self.N_theta * (self.N_r - 1)  # Exterior elements
-        # print("Exterior u_r: %.3e" % (u_r[i_max:].sum()))
-        # print("Exterior u_theta: %.3e" % (u_theta[i_max:].sum()))
-        # print("Interior u_r: %.3e" % (u_r[:self.N_theta].sum()))
-        # print("Interior u_theta: %.3e" % (u_theta[:self.N_theta].sum()))
-        # print("Interior T: %.3e" % (np.diff(T[:self.N_theta]).sum()))
 
         dt_crit = dx_min / np.max(u_mag)
         if dt > dt_crit:
@@ -446,30 +439,14 @@ class FD_solver(animator, IO, rk45_solver):
         print("Running simulation...")
         self.t = 0.0
         self.dtmax = tmax
-        # TODO: compute velocity components
-        # u_r = np.zeros_like(T)
-        # u_theta = np.zeros_like(T)
-        # print_step = N // 100
         self.i = 0
 
         dt0 = 1e3
-        dtmax = tmax
         gen = self.adaptive_solver(
             func=self.T_dot, y=T, tmax=tmax, dt=dt0, solout=self.RK_solout
         )
         i, t, y = zip(*gen)
 
-        # for i in range(N):
-        #     if i % print_step == 0:
-        #         print(
-        #             "[%.1f %%] \t t = %.3f kyr \t T = %.3f \t v = %.3e" %
-        #             (100*i/N, 1e-3*t/self.t_yr, np.mean(T),
-        #              np.max(np.sqrt(u_r**2 + u_theta**2)))
-        #         )
-        #     if i % N_IO == 0:
-        #         self.write(t, T, u_r, u_theta)
-        #     T, u_r, u_theta = self.do_step(t, T, dt)
-        #     t += dt
         print("Done")
 
         return True

@@ -28,7 +28,7 @@ class IO:
 
         n = np.arange(N_r*N_theta)
         j = n % N_theta
-        i = (n - j)/N_r
+        i = (n - j)/N_theta
 
         r = i*self.dr
         theta = j*self.dtheta

@@ -98,9 +98,8 @@ class rk45_solver:
                 if t > t_out_next:
                     ind_next = bisect_right(t_out, t)
                     t_out_next = t_out[ind_next]
-                    # print("[%i / %i] \t %.3e" % (ind_next, N_out, t))
-                # print("Success dt: %3e" % dt)
                 yield i, t, y
+                self.error = e*dt
                 if solout is not None:
                     solout(t, y, dt)
                 i = 0
