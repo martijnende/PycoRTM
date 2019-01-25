@@ -213,13 +213,6 @@ class animator:
         )
         sm_v._A = []
 
-        # T = self.data["T"][inds].values
-        # T = T.reshape(self.N_r, self.N_theta).T
-        # # plt.contourf(r, theta, T, interpolate="None")
-        # plt.imshow(T.T, origin="lower")
-        # plt.show()
-        # exit()
-
         plt.figure(figsize=(12, 5))
         ax = plt.subplot(121, aspect="equal")
         CS = plt.contourf(
