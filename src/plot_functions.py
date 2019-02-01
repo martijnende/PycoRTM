@@ -60,19 +60,40 @@ class animator:
         N_theta = self.N_theta
         R = self.R
         t_vals = data["t"].unique()
+        dt = np.hstack([0, np.diff(t_vals)])
         self.N_t = len(t_vals)
+
+        n = np.arange(N_r * N_theta)
+        j = n % N_theta
+        i = (n - j) / N_theta + 0.5
+        r = i * self.dr
+        N_t = len(t_vals)
 
         # Map data for theta = 0 to theta = 2*pi
         # to make the contour plots periodic
         X = np.vstack([self.X, self.X[0]])
         Y = np.vstack([self.Y, self.Y[0]])
 
+        T_old = data["T"].values.reshape(-1, N_r*N_theta)
         T = data["T"].values.reshape(-1, X.shape[1], X.shape[0]-1).T
         T = np.concatenate([T, T[0, :, :].reshape(1, T.shape[1], len(t_vals))], axis=0)
         T0 = T[:, :, 0]
 
-        v = np.sqrt(data["u_r"]**2 + data["u_theta"]**2)
-        v = np.log10(v.values.reshape(-1, X.shape[1], X.shape[0]-1).T)
+        # v = np.sqrt(data["u_r"]**2 + data["u_theta"]**2)
+        # v = np.log10(v.values.reshape(-1, X.shape[1], X.shape[0] - 1).T)
+        # v = v.values.reshape(-1, X.shape[1], X.shape[0]-1).T
+        kernels = self.kernels
+        u_r = data["u_r"].values.reshape(N_t, N_r*N_theta)
+        u_theta = data["u_theta"].values.reshape(N_t, N_r * N_theta)
+        div_u = []
+        for i in range(N_t):
+            div_u_r = u_r[i] / r + kernels["psi"]["grad_r"].dot(u_r[i])
+            div_u_theta = kernels["psi"]["grad_theta"].dot(u_theta[i])
+            mag_u = np.sqrt(u_r[i]**2 + u_theta[i]**2)
+            # div_u.append(self.beta*T_old[i]*(div_u_r + div_u_theta)*dt[i])
+            div_u.append((div_u_r + div_u_theta)/mag_u)
+        v = np.array(div_u).reshape(-1, X.shape[1], X.shape[0]-1).T
+        print(v.min(), v.max(), v.mean(), np.nanmedian(np.abs(v)))
         v = np.concatenate([v, v[0, :, :].reshape(1, v.shape[1], len(t_vals))], axis=0)
         v0 = v[:, :, 0]
 
@@ -90,12 +111,12 @@ class animator:
 
         # Model object perimeter
         circle = matplotlib.patches.Circle(
-            xy=[0, 0], radius=(self.N_r-1)*self.dr,
+            xy=[0, 0], radius=(self.N_r-0.5)*self.dr,
             edgecolor="k", facecolor="none"
         )
 
         circle2 = matplotlib.patches.Circle(
-            xy=[0, 0], radius=(self.N_r-2)*self.dr,
+            xy=[0, 0], radius=(self.N_r-1.5)*self.dr,
             edgecolor="k", facecolor="none"
         )
 
@@ -143,7 +164,7 @@ class animator:
 
         print("Rendering animation...")
 
-        duration = 20.0
+        duration = 10.0
         self.ani_dict = {
             "tmax": duration,
             "X": X,
@@ -157,7 +178,7 @@ class animator:
             "axes": (ax1, ax2),
         }
         ani = VideoClip(self.update_animation_save, duration=duration)
-        ani.write_videofile("movie.mp4", fps=30)
+        ani.write_videofile("movie.mp4", fps=T.shape[0]/duration)
 
         # plt.show()
         pass
@@ -171,7 +192,7 @@ class animator:
         R = self.R
 
         circle = matplotlib.patches.Circle(
-            xy=[0, 0], radius=(self.N_r-1)*self.dr,
+            xy=[0, 0], radius=(self.N_r-0.5)*self.dr,
             edgecolor="k", facecolor="none"
         )
 

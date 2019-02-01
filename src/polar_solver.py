@@ -4,13 +4,16 @@ from scipy.sparse.linalg import spsolve, inv
 from src.IO_lib import IO
 from src.plot_functions import animator
 from src.rk45 import rk45_solver
+from src.auxiliary import helper
+from time import time
 
 
-class FD_solver(animator, IO, rk45_solver):
+class FD_solver(animator, helper, IO, rk45_solver):
 
-    def __init__(self, IO_file="output.csv"):
+    def __init__(self):
         animator.__init__(self)
-        IO.__init__(self, IO_file=IO_file)
+        helper.__init__(self)
+        IO.__init__(self)
         rk45_solver.__init__(self)
         self.t_yr = 3600*24*365.25
         pass
@@ -18,9 +21,9 @@ class FD_solver(animator, IO, rk45_solver):
     def set_params(self, params):
         self.__dict__.update(params)
         self.dr = self.R / self.N_r
-        self.dtheta = 2 * np.pi / self.N_theta
+        self.dtheta = self.theta_range / self.N_theta
         self.dx_min = min(self.dr, self.dr*self.dtheta)
-        r = np.arange(self.N_r) * self.dr
+        r = (np.arange(self.N_r) + 0.5) * self.dr
         theta = np.arange(self.N_theta) * self.dtheta
         R, Theta = np.meshgrid(r, theta)
         self.X = R * np.cos(Theta)
@@ -36,7 +39,7 @@ class FD_solver(animator, IO, rk45_solver):
         T_ext = self.T_ext
 
         N_t = N_r * N_theta
-        i = np.arange(N_r)
+        i = np.arange(N_r) + 0.5
         i = np.repeat(i, N_theta)
         I = np.ones(N_t)
         i_max = N_theta * (N_r - 1)     # Exterior elements
@@ -123,10 +126,6 @@ class FD_solver(animator, IO, rk45_solver):
         a1[:N_theta] = 0.0
         a2[:N_theta] = 0.0
 
-        # Exterior B.C.: fixed T = T_ext
-        # This B.C. is negated by B.C. for psi:
-        # Radial flow u_r = 0, so that u_r dT/d_r = 0
-
         # Construct sparse matrix
         T_r = diags([a1[N_theta:], 0, a2[:-N_theta]], offsets=[-N_theta, 0, N_theta])
         kernels["T"]["grad_r"] = T_r
@@ -185,23 +184,20 @@ class FD_solver(animator, IO, rk45_solver):
 
         """ Construct stream function kernels (Laplacian) """
 
-        """ Construct psi_r matrix """
+        """ Construct psi_r / r matrix """
         # Central first differences stencil
         a1 = -1 / (2 * i * dr ** 2) * I
         a2 = -a1
         a3 = np.zeros_like(a1)
 
         # Interior B.C.: no flow
-        a1[:N_theta] = 0.0
-        a2[:N_theta] = 0.0
+        a1[:N_theta] *= 0
+        a3[:N_theta] = -1
 
-        # Exterior B.C.: free surface (d^2 theta / d r^2 = 0
-        a2[i_max:] = 0.0
-        a3[i_max:] = -2.0*a1[-1]
-
-        # Exterior B.C.: no flow
-        # a1[:N_theta] = 0.0
-        # a2[:N_theta] = 0.0
+        # Exterior B.C.: free surface (u_th^N+1 = u_th^N)
+        a1[i_max:] *= -1
+        a2[i_max:] *= 0
+        a3[i_max:] = 1
 
         # Construct sparse matrix
         # A = diags([a1[N_theta:], 0, a2[:-N_theta]], offsets=[-N_theta, 0, N_theta])
@@ -214,18 +210,15 @@ class FD_solver(animator, IO, rk45_solver):
         a3 = a1.copy()
 
         # Interior B.C.: no gradient --> x(i+1) = x(i-1)
-        # --> x(i-1) - 2x(i) + x(i+1) = 2x(i-1) - 2x(i)
-        a1[:N_theta] *= 0.0
-        a3[:N_theta] *= 2.0
-
-        # Exterior B.C.: no gradient --> x(i+1) = x(i-1)
         # --> x(i-1) - 2x(i) + x(i+1) = 2x(i+1) - 2x(i)
-        # a1[i_max:] *= 2.0
-        # a3[i_max:] *= 0.0
-        # Exterior B.C.: free surface
-        a1[i_max:] = 0.0
-        a2[i_max:] = 0.0
-        a3[i_max:] = 0.0
+        a1[:N_theta] *= 0
+        a2[:N_theta] *= (3.0 / 2.0)
+        a3[:N_theta] *= 3
+
+        # Exterior B.C.: free surface (u_th^N+1 = u_th^N)
+        a1[i_max:] *= 3
+        a2[i_max:] *= (3.0/2.0)
+        a3[i_max:] *= 0
 
         # Construct sparse matrix
         B = diags([a1[N_theta:], a2, a3[:-N_theta]], offsets=[-N_theta, 0, N_theta])
@@ -242,10 +235,11 @@ class FD_solver(animator, IO, rk45_solver):
         a3[:N_theta] = 0.0
 
         # Exterior B.C.: no radial flow for all j, which
-        # # implies that d^2 psi / d theta^2 = 0 (psi uniform)
+        # implies that d^2 psi / d theta^2 = 0 (psi uniform)
         a1[i_max:] = 0.0
         a2[i_max:] = 0.0
         a3[i_max:] = 0.0
+
 
         # Left periodic B.C: T[i, -1] = T[i, N_theta-1]
         a4 = np.zeros(N_t)
@@ -264,8 +258,6 @@ class FD_solver(animator, IO, rk45_solver):
 
         # Construct Laplacian = nabla^2 (note: not multiplied by alpha)
         laplacian_psi = A + B + C
-        # NOTE: using spsolve is faster than precomputing
-        # inverse (which is dense)
 
         kernels["psi"]["laplacian"] = laplacian_psi
 
@@ -275,6 +267,7 @@ class FD_solver(animator, IO, rk45_solver):
         # Central first differences stencil
         a1 = -1 / (2 * dr) * I
         a2 = -a1
+        a3 = np.zeros_like(a1)
 
         # Interior B.C.: no gradient
         a1[:N_theta] = 0.0
@@ -285,7 +278,7 @@ class FD_solver(animator, IO, rk45_solver):
         a2[i_max:] = 0.0
 
         # Construct sparse matrix
-        psi_r = diags([a1[N_theta:], 0, a2[:-N_theta]], offsets=[-N_theta, 0, N_theta])
+        psi_r = diags([a1[N_theta:], a3, a2[:-N_theta]], offsets=[-N_theta, 0, N_theta])
         kernels["psi"]["grad_r"] = psi_r
 
         """ Construct psi_theta matrix """
@@ -296,7 +289,7 @@ class FD_solver(animator, IO, rk45_solver):
         # Interior B.C.: identical elements
         a1[:N_theta] = 0.0
         a2[:N_theta] = 0.0
-
+        #
         # Exterior B.C.: no gradients
         a1[i_max:] = 0.0
         a2[i_max:] = 0.0
@@ -340,7 +333,7 @@ class FD_solver(animator, IO, rk45_solver):
 
         # Step 1: compute r_T_theta, solve for psi
         r_T_theta = kernels["T"]["r_grad_theta"].dot(T)
-        psi = spsolve(kernels["psi"]["laplacian"], self.dzeta * r_T_theta)
+        psi = spsolve(kernels["psi"]["laplacian"], self.dzeta * r_T_theta, permc_spec="MMD_AT_PLUS_A")
 
         # Step 2: compute velocity components = grad psi
         u_r = kernels["psi"]["grad_theta"].dot(psi)
@@ -366,7 +359,7 @@ class FD_solver(animator, IO, rk45_solver):
         self.i += 1
         self.t = t
 
-        if (self.i % self.N_IO == 0) or (self.i % self.N_print == 0):
+        if (self.i % self.N_IO_time == 0) or (self.i % self.N_IO_snap == 0) or (self.i % self.N_print == 0):
             kernels = self.kernels
 
             # Step 1: compute r_T_theta, solve for psi
@@ -378,13 +371,11 @@ class FD_solver(animator, IO, rk45_solver):
             u_theta = -kernels["psi"]["grad_r"].dot(psi)
 
             if self.i % self.N_print == 0:
-                print(
-                    "t = %.1f kyr \t dt = %.2e yr \t Tmax = %.1f K \t vmax = %.3e m/s" %
-                    (1e-3 * t / self.t_yr, dt / self.t_yr, T.max(),
-                     np.max(np.sqrt(u_r ** 2 + u_theta ** 2)))
-                )
-            if self.i % self.N_IO == 0:
-                self.write(t, T, u_r, u_theta)
+                self.screen_write(t, dt, T, u_r, u_theta)
+            if (self.i % self.N_IO_time == 0) and (self.IO_file_time is not None):
+                self.OT_file_write(t, T)
+            if (self.i % self.N_IO_snap == 0) and (self.IO_file_snap is not None):
+                self.OX_file_write(t, T, u_r, u_theta)
 
         pass
 
@@ -398,7 +389,12 @@ class FD_solver(animator, IO, rk45_solver):
 
         kernels = self.kernels
         dt = t - self.t
-        dx_min = self.dx_min
+        N_r, N_theta = self.N_r, self.N_theta
+
+        n = np.arange(N_r * N_theta)
+        j = n % N_theta
+        i = (n - j) / N_theta + 0.5
+        r = i * self.dr
 
         # Step 1: compute r_T_theta, solve for psi
         r_T_theta = kernels["T"]["r_grad_theta"].dot(T)
@@ -407,17 +403,29 @@ class FD_solver(animator, IO, rk45_solver):
         # Step 2: compute velocity components = grad psi
         u_r = kernels["psi"]["grad_theta"].dot(psi)
         u_theta = -kernels["psi"]["grad_r"].dot(psi)
-        u_mag = np.sqrt(u_r**2 + u_theta**2)
 
-        dt_crit = dx_min / np.max(u_mag)
-        if dt > dt_crit:
+        # Divergence terms of u
+        div_u_r = u_r / r + kernels["psi"]["grad_r"].dot(u_r)
+        div_u_theta = kernels["psi"]["grad_theta"].dot(u_theta)
+
+        # Find limiting time step due to advection
+        dt_r = np.nanmin(self.dr / np.abs(u_r))
+        dt_theta = np.nanmin(r * self.dtheta / np.abs(u_theta))
+        dt_crit = np.min([dt_r, dt_theta])
+
+        if dt > 0.9*dt_crit:
             self.dtmax = 0.9*dt_crit
 
         # Step 3: compute diffusive and advective terms
         dT_diff = self.alpha * kernels["T"]["laplacian"].dot(T)
         T_r = kernels["T"]["grad_r"].dot(T)
         T_theta = kernels["T"]["grad_theta"].dot(T)
-        dT_adv = self.beta * (u_r * T_r + u_theta * T_theta)
+
+        # Advective term includes non-solenoidal flow (div u =/= 0),
+        # owing to limited numerical accuracy.
+        dT_adv1 = self.beta * (u_r * T_r + u_theta * T_theta)
+        dT_adv2 = self.beta * T * (div_u_r + div_u_theta)
+        dT_adv = dT_adv1 + dT_adv2
 
         # Step 4: compute source function (including B.C.)
         O_base = kernels["O"]
@@ -433,13 +441,15 @@ class FD_solver(animator, IO, rk45_solver):
         self.construct_kernels()
         print("Kernels constructed")
 
-        self.create_IO_file()
+        self.create_IO_files()
         print("Output file created")
 
         print("Running simulation...")
         self.t = 0.0
+        self.tmax = tmax
         self.dtmax = tmax
         self.i = 0
+        self.t_wall_start = time()
 
         dt0 = 1e3
         gen = self.adaptive_solver(

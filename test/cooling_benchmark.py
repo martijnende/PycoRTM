@@ -38,7 +38,7 @@ class AnalyticalSolution:
 
 """ Basic problem parameters """
 
-R = 40e3        # Radius [m]
+R = 45e3        # Radius [m]
 N = 40          # Number of mesh nodes in r
 alpha = 1.0e-4  # Thermal diffusivity [m2/s]
 
@@ -48,13 +48,14 @@ T_ext = 300.0   # External temperature [K]
 t_yr = 3600*24*365.25   # Number of seconds in 1 year
 
 # Mesh node positions
-r = np.linspace(0, R-R/N, N)
+dr = R / N
+r = np.linspace(0.5*dr, R-0.5*dr, N)
 
 # Mirror mesh (for symmetric plotting), set scale to km
 r_both = np.hstack([-r[::-1], r]) * 1e-3
 
 # Instantiate analytical solution class
-ana = AnalyticalSolution(alpha, R, T0-T_ext)
+ana = AnalyticalSolution(alpha, R+0.5*dr, T0-T_ext)
 
 
 """ Numerical simulation parameters """
@@ -73,19 +74,24 @@ params = {
     "dzeta": 0.0,
     "T_ext": T_ext,
     "t_half": 1.0,
-    "N_IO": 1000,
+    "N_IO_snap": 1000,
+    "N_IO_time": 1,
     "N_print": 100,
     "rtol": 1e-10,      # High integration precision
     "atol": 1e-10,
+    "IO_file_time": None,
+    "IO_file_snap": "cooling_benchmark_output.csv",
+    "theta_range": 2*np.pi,
 }
 
-solver = FD_solver(IO_file="cooling_benchmark_output.csv")
+solver = FD_solver()
 solver.set_params(params)
 
 T0 = np.ones(N_r*N_theta)*T0        # Initial temperature vector
 tmax = 50e3 * solver.t_yr           # Simulation duration
 # solver.run_simulation(T0, tmax)     # Run simulation
-data = solver.read()                # Read simulation output data
+solver.read()                       # Read simulation output data
+data = solver.ox_data
 
 t_sim = np.unique(data["t"])        # Simulation time data
 r_sim = np.unique(data["r"])        # Simulation mesh node positions
@@ -107,6 +113,7 @@ for i, ti in enumerate(t_sim):
 
     # Mirror and plot analytical solution
     T_both = np.hstack([T[::-1], T])
+
     plt.plot(r_both, T_both, c="k", ls="--")
 
     # Plot numerical solution
